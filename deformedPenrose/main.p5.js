@@ -4,14 +4,15 @@ let sketch = function(p) {
   let canvasSize
   let triangles = []
   let nodes = []
-  let lastPhi = 0
   let inputImage
   let short = 0
   let long = 0
 
   // Controls
   let shadeA, shadeB, shadeC, subdivControl
-  let drawLines, debug, manualControl, recalcButton
+  let drawLines, debug, manualControl, recalcButton, deformButton
+  let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
+  let palette = { "a": "#683257", "b": "#bd4089", "lines": "#683257" }
 
   // Find the matching node in an array of nodes
   function findNode(nodes, node, searchKey) {
@@ -34,7 +35,7 @@ let sketch = function(p) {
   // Later, we will also calculate the node type, and which direction we should deform it in
   function incrementNode(nodeOrigin, nodeDest) {
 
-    matchingNodes = findNode(nodes, nodeOrigin, "nodeOrigin")
+    let matchingNodes = findNode(nodes, nodeOrigin, "nodeOrigin")
     if(matchingNodes.length == 0) {
       // If node isn't already in nodes[] then we add it
       nodes.push({ nodeOrigin: nodeOrigin, destinations: [ nodeDest ]})
@@ -68,7 +69,7 @@ let sketch = function(p) {
   // Very useful for readability during debugging
   function approx(node, decimals = 5) {
 
-    if(typeof node == 'number')
+    if(typeof node == "number")
       return Math.round(node * Math.pow(10, decimals)) / Math.pow(10, decimals)
 
     node.re = Math.round(node.re * Math.pow(10, decimals)) / Math.pow(10, decimals)
@@ -80,7 +81,7 @@ let sketch = function(p) {
 
     let result = []
 
-    for(triangle of triangles) {
+    for(let triangle of triangles) {
 
       if(triangle.type == 0) {
 
@@ -133,9 +134,9 @@ let sketch = function(p) {
 
   // https://stackoverflow.com/questions/3115982/how-to-check-if-two-arrays-are-equal-with-javascript
   function arraysEqual(a, b) {
-    if (a === b) return true;
-    if (a == null || b == null) return false;
-    if (a.length != b.length) return false;
+    if (a === b) return true
+    if (a == null || b == null) return false
+    if (a.length != b.length) return false
 
     // If you don't care about the order of the elements inside
     // the array, you should sort both arrays here.
@@ -143,9 +144,9 @@ let sketch = function(p) {
     // you might want to clone your array first.
 
     for (var i = 0; i < a.length; ++i) {
-      if (a[i] !== b[i]) return false;
+      if (a[i] !== b[i]) return false
     }
-    return true;
+    return true
   }
 
   function initPenrose(numRecurse) {
@@ -156,7 +157,7 @@ let sketch = function(p) {
     long = 0
 
     // Create wheel of red triangles around the origin
-    for(i of Array(10).keys()) {
+    for(let i of Array(10).keys()) {
       let B = 0
       let C = 0
       if(i%2) {
@@ -169,13 +170,13 @@ let sketch = function(p) {
       let triangle = { type: 0, vertA: math.complex(0,0), vertB: B, vertC: C }
       triangles.push(triangle)
     }
-    
-    //Perform subdivisions
-    for (i of Array(numRecurse).keys()) {
-      triangles = subdivide(triangles)
-    }
 
-    triangles.forEach(triangle => { 
+    //Perform subdivisions
+    Array.from(Array(numRecurse)).forEach(() => {
+      triangles = subdivide(triangles)
+    })
+
+    triangles.forEach(triangle => {
       // Find a unique list of nodes
       addTriangleNodes(triangle)
 
@@ -224,9 +225,11 @@ let sketch = function(p) {
         // Unknown cluster type - possibly on the edge of the diagram
       }
 
-      // Figure out the angle of the deformation. 
+      // Figure out the angle of the deformation.
       // The angle points in a direction which, when applying a positive value for deformation, will darken the overall image
-      let angleNode;
+      let angleNode
+
+      let nextBigOne, lastAngle, distHist, i
       switch(node.type) {
         case 1:
           // angleNode is the node which we use to calculate what angle the cluster is at.
@@ -241,7 +244,7 @@ let sketch = function(p) {
           else
             node.angle = angleNode.sub(node.nodeOrigin).arg()
 
-            break;
+          break
         case 2:
         case 4:
         case 7:
@@ -256,27 +259,27 @@ let sketch = function(p) {
             node.type = 0
           else
             node.angle = angleNode.sub(node.nodeOrigin).arg()+Math.PI
-          
-          break;
+
+          break
         case 5:
 
           // For 5 we have to resort to measuring angles between nodeOrigin and the destination nodes
           // angleNode is the node shared between the two blue triangles with the greatest angle (ie. fat side)
-          // If we go around the destinations CW or CCW , measuring the angles, we will have a small angle (0.63), 
+          // If we go around the destinations CW or CCW , measuring the angles, we will have a small angle (0.63),
           // then a big one (1.89). The destination corresponding to the first big one after a small one is the angleNode.
 
           // Sort destinations by angle
           node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
-          
-          let nextBigOne = false
-          let lastAngle = node.destinations[5].sub(node.nodeOrigin).arg() - 2*Math.PI
+
+          nextBigOne = false
+          lastAngle = node.destinations[5].sub(node.nodeOrigin).arg() - 2*Math.PI
           for(let dest of node.destinations) {
             let angle = dest.sub(node.nodeOrigin).arg()
             let delta = angle - lastAngle
 
             if(nextBigOne && delta > 1) {
               node.angle = angle
-              break;
+              break
             } else if(delta.toFixed(2) == "0.63") {
               nextBigOne = true
             }
@@ -284,10 +287,10 @@ let sketch = function(p) {
             lastAngle = angle
           }
           // If we get to the end without a small->large transition, it must have been the first dest node
-          if(typeof node.angle === 'undefined')
+          if(typeof node.angle === "undefined")
             node.angle = node.destinations[0].sub(node.nodeOrigin).arg()
 
-          break;
+          break
         case 6:
 
           // For 6 we take a similar approach, but this time instead of measuring angle delta, we measure distance
@@ -295,10 +298,10 @@ let sketch = function(p) {
 
           // Sort destinations by angle
           node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
-          
-          let distHist = []
-          let i = 0
-          while(typeof node.angle === 'undefined') {
+
+          distHist = []
+          i = 0
+          while(typeof node.angle === "undefined") {
             let dest = node.destinations[i++]
             let dist = approx(dest.sub(node.nodeOrigin).abs(), 3) // round value to account for calculation errors
             distHist.push(dist)
@@ -309,14 +312,14 @@ let sketch = function(p) {
               short = dist
 
             if(distHist.length < 8)
-              continue;
+              continue
 
             if(distHist.length == 9)
               distHist.shift()
 
             if(arraysEqual(distHist, [short, short, long, short, short, short, long, short])) {
               node.angle = dest.sub(node.nodeOrigin).arg()
-              break;
+              break
             }
 
             // We must have hit the end, loop around and try again
@@ -324,15 +327,15 @@ let sketch = function(p) {
               i = 0
           }
           // If we get to the end without a small->large transition, it must have been the first dest node
-          if(typeof node.angle === 'undefined')
+          if(typeof node.angle === "undefined")
             node.angle = node.destinations[0].sub(node.nodeOrigin).arg()
 
-        break;
+          break
         case 3:
         case 8:
         default:
           // N/A
-          break;
+          break
       }
 
     })
@@ -360,33 +363,37 @@ let sketch = function(p) {
         else if(node.type == 7)
           phi = p7
       } else {
-        x = p.int(canvasSize*(node.nodeOrigin.re + 1)/2)
-        y = p.int(canvasSize*(node.nodeOrigin.im + 1)/2)
+        let x = p.int(canvasSize*(node.nodeOrigin.re + 1)/2)
+        let y = p.int(canvasSize*(node.nodeOrigin.im + 1)/2)
 
 
-        // t4,5,6 + 0.09 = full white
-        // t1 - 0.09, t2,4 - 0.03 = full black
-        
+        /* This is where the actual greyscale to deformation mapping happens
+         * Each node type can be deformed within a range, but I have pre-determined
+         * a fully black, and fully white presets, which we use to set the range.
+         * These presets are scaled by the "short" length of the penrose tile which
+         * was calculated during the node type sorting.
+         * Fullly white => t4,5,6 = short
+         * Full black => t1 = -short, t2,4 = -short/3 
+         */
+
         switch(node.type) {
           case 1:
-            phi = p.map(getPixelVal(x, y), 0, 255, 0, short)
+            phi = p.map(getPixelVal(x, y), 0, 255, 0, 1)
             break
           case 2:
-            phi = p.map(getPixelVal(x, y), 0, 255, -short/3, 0)
+            phi = p.map(getPixelVal(x, y), 0, 255, -1/3, 0)
             break
           case 4:
-            phi = p.map(getPixelVal(x, y), 0, 255, -short/3, short)
+            phi = p.map(getPixelVal(x, y), 0, 255, -1/3, 1)
             break
           case 5:
-            phi = p.map(getPixelVal(x, y), 0, 255, 0, short)
-            break
-          case 2:
-            phi = p.map(getPixelVal(x, y), 0, 255, 0, short)
+            phi = p.map(getPixelVal(x, y), 0, 255, 0, 1)
             break
         }
+        phi *= short
 
       }
-      
+
       // Find all the triangles which have this node
       let nodeTriangles = triangles.filter(triangle => {
         let vertAMatches = vertMatches(triangle.original.vertA, node.nodeOrigin)
@@ -420,16 +427,55 @@ let sketch = function(p) {
     if(img) {
       inputImage = img
     }
-    
+
     inputImage.filter(p.GRAY)
     inputImage.loadPixels()
     initPenrose(p.int(subdivControl.value()))
-    recalcButton.attribute('disabled', '')
+    recalcButton.attribute("disabled", "")
+    p.draw()
+  }
+
+  function setPalette() {
+    palette = { "a": shadeA.color() , "b": shadeB.color(), "lines": shadeC.color() }
+    p.draw()
+  }
+
+  function pickPalette(e) {
+    switch(e.target.value) {
+      case "Purple":
+      default:
+        palette = { "a": "#683257", "b": "#bd4089", "lines": "#683257" }
+        break
+      case "Earthy":
+        palette = { "a": "#c57b57", "b": "#f1ab86", "lines": "#c57b57" }
+        break
+      case "Sky":
+        palette = { "a": "#445398", "b": "#92aae3", "lines": "#445398" }
+        break
+      case "Green":
+        palette = { "a": "#4e5c15", "b": "#AEC772", "lines": "#4e5c15" }
+        break
+      case "Grey":
+        palette = { "a": "#141414", "b": "#2d2d2d", "lines": "#0a0a0a" }
+        break
+    }
+
+    // colorpickers don't appear to have a method to set the value, so we have to recreate :(
+    shadeA.remove()
+    shadeA = p.createColorPicker(palette.a)
+    shadeA.input(setPalette)
+    shadeB.remove()
+    shadeB = p.createColorPicker(palette.b)
+    shadeB.input(setPalette)
+    shadeC.remove()
+    shadeC = p.createColorPicker(palette.lines)
+    shadeC.input(setPalette)
+
     p.draw()
   }
 
   function enableButton() {
-    recalcButton.removeAttribute('disabled')
+    recalcButton.removeAttribute("disabled")
   }
 
   function newImage(e) {
@@ -437,7 +483,7 @@ let sketch = function(p) {
   }
 
   p.preload = function() {
-    inputImage = p.loadImage('dgen.png')
+    inputImage = p.loadImage("dgen.png")
   }
 
   p.setup = function() {
@@ -447,13 +493,14 @@ let sketch = function(p) {
     else
       canvasSize = inputImage.height
 
-    p.createCanvas(canvasSize, canvasSize)
+    let canvas = p.createCanvas(canvasSize, canvasSize)
+    canvas.style('border-radius', 50 + 'px')
 
     let y = 20
-    manualControl = p.createCheckbox('Manual Control', false)
+    manualControl = p.createCheckbox("Manual Control", false)
     manualControl.changed(p.draw)
     manualControl.position(canvasSize + 20, y)
-    
+
     phi1slider = p.createSlider(0, 20, 10)
     phi1slider.position(canvasSize + 20, y+=30)
     phi2slider = p.createSlider(0, 20, 10)
@@ -467,44 +514,57 @@ let sketch = function(p) {
     phi7slider = p.createSlider(0, 20, 10)
     phi7slider.position(canvasSize + 20, y+=30)
 
-    deformButton = p.createButton('Deform')
+    deformButton = p.createButton("Deform")
     deformButton.position(canvasSize + 20, y+=30)
     deformButton.mousePressed(p.draw)
 
-    debug = p.createCheckbox('Debug', false)
+    debug = p.createCheckbox("Debug", false)
     debug.changed(p.draw)
     debug.position(canvasSize + 120, y)
 
-    detailLabel = p.createSpan('Level of detail')
+    let detailLabel = p.createSpan("Level of detail")
     detailLabel.position(canvasSize + 20, y+=80)
     subdivControl = p.createSlider(1, 8, NUM_SUBDIVISIONS)
     subdivControl.position(canvasSize + 20, y+=30)
     subdivControl.changed(enableButton)
 
-    recalcButton = p.createButton('Recalculate')
-    recalcButton.attribute('disabled', '')
+    recalcButton = p.createButton("Recalculate")
+    recalcButton.attribute("disabled", "")
     recalcButton.position(canvasSize + 60, y+=30)
     recalcButton.mousePressed(recalc)
 
-    sel = p.createSelect()
-    sel.position(canvasSize + 20, y+=50)
-    sel.option('dgen.png')
-    sel.option('lineargrad.png')
-    sel.option('skull.png')
-    sel.option('snake.png')
-    sel.option('bucwah.png')
+    let imageLabel = p.createSpan("Reference Image")
+    imageLabel.position(canvasSize + 20, y+=50)
+    let sel = p.createSelect()
+    sel.position(canvasSize + 20, y+=20)
+    sel.option("dgen.png")
+    sel.option("lineargrad.png")
+    sel.option("skull.png")
+    sel.option("snake.png")
+    sel.option("bucwah.png")
     sel.changed(newImage)
 
-    drawLines = p.createCheckbox('Draw lines', true)
+    drawLines = p.createCheckbox("Draw lines", true)
     drawLines.changed(p.draw)
     drawLines.position(canvasSize + 120, canvasSize - 40)
 
-    shadeA = p.createColorPicker('#683257')
-    shadeA.input(p.draw)
-    shadeB = p.createColorPicker('#bd4089')
-    shadeB.input(p.draw)
-    shadeC = p.createColorPicker('#683257')
-    shadeC.input(p.draw)
+    let colourLabel = p.createSpan("Color Preset")
+    colourLabel.position(canvasSize + 20, y+=50)
+    let colourSelect = p.createSelect()
+    colourSelect.position(canvasSize + 20, y+=20)
+    colourSelect.option("Purple")
+    colourSelect.option("Earthy")
+    colourSelect.option("Sky")
+    colourSelect.option("Green")
+    colourSelect.option("Grey")
+    colourSelect.changed(pickPalette)
+
+    shadeA = p.createColorPicker(palette.a)
+    shadeA.input(setPalette)
+    shadeB = p.createColorPicker(palette.b)
+    shadeB.input(setPalette)
+    shadeC = p.createColorPicker(palette.lines)
+    shadeC.input(setPalette)
 
     inputImage.filter(p.GRAY)
     inputImage.loadPixels()
@@ -522,17 +582,17 @@ let sketch = function(p) {
     let p5 = p.map(phi5slider.value(), 0, 20, -0.05, 0.05)
     let p6 = p.map(phi6slider.value(), 0, 20, -0.05, 0.05)
     let p7 = p.map(phi7slider.value(), 0, 20, -0.05, 0.05)
-    
+
     deformTriangles(p1, p2, p4, p5, p6, p7)
 
-    p.background('#fff')
+    p.background(palette.lines)
     p.strokeWeight(drawLines.checked() ? 1 : 0)
-    p.stroke(shadeC.color())
-    for (triangle of triangles) {
+    p.stroke(palette.lines)
+    for (let triangle of triangles) {
       if(triangle.type == 0) {
-        p.fill(shadeA.color())
+        p.fill(palette.a)
       } else {
-        p.fill(shadeB.color())
+        p.fill(palette.b)
       }
       p.beginShape()
       p.vertex(canvasSize*(triangle.vertA.re + 1)/2, canvasSize*(triangle.vertA.im + 1)/2)
@@ -542,12 +602,12 @@ let sketch = function(p) {
       p.endShape()
     }
 
-    p.stroke('#fff')
-    p.fill('#000')
+    p.stroke(palette.lines)
+    p.fill("#000")
 
     if(manualControl.checked()) {
       let y = 30
-      p.text("phi1: " + p1.toFixed(2), canvasSize - 60, y+=30)
+      p.text("phi1: " + p1.toFixed(2), canvasSize - 60, y+=35)
       p.text("phi2: " + p2.toFixed(2), canvasSize - 60, y+=30)
       p.text("phi4: " + p4.toFixed(2), canvasSize - 60, y+=30)
       p.text("phi5: " + p5.toFixed(2), canvasSize - 60, y+=30)
@@ -561,19 +621,19 @@ let sketch = function(p) {
 
       nodes.forEach(node => {
 
-        let nodeText = ''
+        let nodeText = ""
         if(node.type)
-          nodeText = 't' + node.type
-        if(node.angle) {      
-          p.stroke('#0f0')
+          nodeText = "t" + node.type
+        if(node.angle) {
+          p.stroke("#0f0")
           p.beginShape()
-          newVert = node.nodeOrigin.add(math.Complex.fromPolar(0.05,node.angle))
+          let newVert = node.nodeOrigin.add(math.Complex.fromPolar(0.05,node.angle))
           p.vertex(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
           p.vertex(canvasSize*(newVert.re + 1)/2, canvasSize*(newVert.im + 1)/2)
           p.endShape()
         }
         p.stroke(shadeC.color())
-        p.fill('#000')
+        p.fill("#000")
         p.text(nodeText, (node.nodeOrigin.re+1)*canvasSize/2, (node.nodeOrigin.im+1)*canvasSize/2)
 
       })
@@ -582,4 +642,4 @@ let sketch = function(p) {
   }
 }
 
-new p5(sketch, 'penrose')
+new p5(sketch, "penrose")
