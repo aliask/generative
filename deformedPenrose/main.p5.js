@@ -12,7 +12,16 @@ let sketch = function(p) {
   let shadeA, shadeB, shadeC, subdivControl
   let drawLines, debug, manualControl, recalcButton, deformButton
   let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
-  let palette = { "a": "#683257", "b": "#bd4089", "lines": "#683257" }
+  let palettes = [
+    { "name": "Outrun", "palette": { "a": "#D90368", "b": "#2E294E", "lines": "#2E294E" } },
+    { "name": "Autumn", "palette": { "a": "#780116", "b": "#DB7C26", "lines": "#780116" } },
+    { "name": "Purple", "palette": { "a": "#683257", "b": "#bd4089", "lines": "#683257" } },
+    { "name": "Earthy", "palette": { "a": "#c57b57", "b": "#f1ab86", "lines": "#c57b57" } },
+    { "name": "Sky",    "palette": { "a": "#445398", "b": "#92aae3", "lines": "#445398" } },
+    { "name": "Green",  "palette": { "a": "#4e5c15", "b": "#AEC772", "lines": "#4e5c15" } },
+    { "name": "Grey",   "palette": { "a": "#141414", "b": "#2d2d2d", "lines": "#0a0a0a" } }
+  ]
+  let palette = palettes[0].palette
 
   // Find the matching node in an array of nodes
   function findNode(nodes, node, searchKey) {
@@ -441,24 +450,9 @@ let sketch = function(p) {
   }
 
   function pickPalette(e) {
-    switch(e.target.value) {
-      case "Purple":
-      default:
-        palette = { "a": "#683257", "b": "#bd4089", "lines": "#683257" }
-        break
-      case "Earthy":
-        palette = { "a": "#c57b57", "b": "#f1ab86", "lines": "#c57b57" }
-        break
-      case "Sky":
-        palette = { "a": "#445398", "b": "#92aae3", "lines": "#445398" }
-        break
-      case "Green":
-        palette = { "a": "#4e5c15", "b": "#AEC772", "lines": "#4e5c15" }
-        break
-      case "Grey":
-        palette = { "a": "#141414", "b": "#2d2d2d", "lines": "#0a0a0a" }
-        break
-    }
+    palette = palettes.filter(a=>{return a.name==e.target.value})[0];
+    if(!palette) { return }
+    palette = palette.palette
 
     // colorpickers don't appear to have a method to set the value, so we have to recreate :(
     shadeA.remove()
@@ -552,11 +546,9 @@ let sketch = function(p) {
     colourLabel.position(canvasSize + 20, y+=50)
     let colourSelect = p.createSelect()
     colourSelect.position(canvasSize + 20, y+=20)
-    colourSelect.option("Purple")
-    colourSelect.option("Earthy")
-    colourSelect.option("Sky")
-    colourSelect.option("Green")
-    colourSelect.option("Grey")
+    palettes.forEach(palette => {
+      colourSelect.option(palette.name)
+    })
     colourSelect.changed(pickPalette)
 
     shadeA = p.createColorPicker(palette.a)
