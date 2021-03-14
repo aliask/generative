@@ -2,13 +2,14 @@ let sketch = function(p) {
 
   class Node {
     nodeOrigin
-    destinations
+    destinations = new Map()
     type
     angle
+    redTriangles = new Set()
+    blueTriangles = new Set()
   
     constructor(origin, destination) {
       this.nodeOrigin = origin
-      this.destinations = new Map()
       this.destinations.set(getId(destination), destination)
     }
   }
@@ -16,11 +17,11 @@ let sketch = function(p) {
   const goldenRatio = (1 + Math.sqrt(5)) / 2
   const SLIDER_RESOLUTION = 30
   const SUBDIVISION_THRESHOLD = 7
+
   let subdivisions = 7
   let canvasSize
   let canvas
   let triangles = []
-  let nodes = []
   let nodeMap = new Map()
   let inputImage
   let short = 0
@@ -42,12 +43,10 @@ let sketch = function(p) {
   ]
   let palette = palettes[0].palette
 
-  function scale(num, in_min, in_max, out_min, out_max) {
-    return (num - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
-  }
-
+  // Create an ID based on the coordinates of the point - same coordinates will give consistent ID
+  // Used to prevent duplicate points in node Map and destination Set
   function getId(point) {
-    return `${point.re}${point.im}`
+    return point.re*(1000)+point.im
   }
 
   // Build the nodes array. Each node will have an origin point, plus a list of the destinations
@@ -61,6 +60,15 @@ let sketch = function(p) {
       node.destinations.set(getId(nodeDest), nodeDest)
   }
 
+  // Keep references to the associated triangles for use determining node type later
+  function addTriangle(vert, triangle) {
+    node = nodeMap.get(getId(vert))
+    if(triangle.type == 0)
+      node.redTriangles.add(triangle)
+    else
+      node.blueTriangles.add(triangle)
+  }
+
   // For a given triangle, we add each edge vertex to the node list (A->B gets added, but so does B->A, etc)
   function addTriangleNodes(triangle) {
     incrementNode(triangle.vertA, triangle.vertB)
@@ -69,6 +77,9 @@ let sketch = function(p) {
     incrementNode(triangle.vertB, triangle.vertC)
     incrementNode(triangle.vertC, triangle.vertA)
     incrementNode(triangle.vertC, triangle.vertB)
+    addTriangle(triangle.vertA, triangle)
+    addTriangle(triangle.vertB, triangle)
+    addTriangle(triangle.vertC, triangle)
   }
 
   // Very useful for readability during debugging
@@ -157,7 +168,6 @@ let sketch = function(p) {
   function initPenrose(numRecurse) {
 
     triangles = []
-    nodes = []
     nodeMap = new Map()
     short = 0
     long = 0
@@ -196,21 +206,9 @@ let sketch = function(p) {
     // Determine which node type each node is
     nodeMap.forEach(node => {
 
-      let nodeTriangles = triangles.filter(triangle => {
-        let vertAMatches = vertMatches(triangle.vertA, node.nodeOrigin)
-        let vertBMatches = vertMatches(triangle.vertB, node.nodeOrigin)
-        let vertCMatches = vertMatches(triangle.vertC, node.nodeOrigin)
-        return (vertAMatches | vertBMatches | vertCMatches)
-      })
-
-      let redTriangles = nodeTriangles.filter(triangle => {
-        return (triangle.type == 0)
-      })
+      redTriangles = [...node.redTriangles]
       node.numRed = redTriangles.length
-
-      let blueTriangles = nodeTriangles.filter(triangle => {
-        return (triangle.type == 1)
-      })
+      blueTriangles = [...node.blueTriangles]
       node.numBlue = blueTriangles.length
 
       if(node.numRed == 4 && node.numBlue == 2) {
@@ -275,7 +273,6 @@ let sketch = function(p) {
           // then a big one (1.89). The destination corresponding to the first big one after a small one is the angleNode.
 
           // Sort destinations by angle
-          //node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
           sortedDests = [...node.destinations.values()].sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
 
           nextBigOne = false
@@ -304,7 +301,6 @@ let sketch = function(p) {
           // angleNode will be the node at the end of the sequence, short short long short short short long SHORT <- this one
 
           // Sort destinations by angle
-          //node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
           sortedDests = [...node.destinations.values()].sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
 
           distHist = []
@@ -322,11 +318,15 @@ let sketch = function(p) {
             if(distHist.length < 8)
               continue
 
-            if(distHist.length == 9)
-              distHist.shift()
-
-            if(arraysEqual(distHist, [short, short, long, short, short, short, long, short])) {
+            let last8 = distHist.slice(Math.max(distHist.length - 8, 1))
+            if(arraysEqual(last8, [short, short, long, short, short, short, long, short])) {
               node.angle = dest.sub(node.nodeOrigin).arg()
+              break
+            }
+            
+            // nodes at the edge of the image can't be computed
+            if(distHist.length == 16) {
+              node.angle = 0
               break
             }
 
@@ -351,15 +351,9 @@ let sketch = function(p) {
   }
 
   function deformNode(node, phi) {
-    // Find all the triangles which have this node
-    let nodeTriangles = triangles.filter(triangle => {
-      let vertAMatches = vertMatches(triangle.original.vertA, node.nodeOrigin)
-      let vertBMatches = vertMatches(triangle.original.vertB, node.nodeOrigin)
-      let vertCMatches = vertMatches(triangle.original.vertC, node.nodeOrigin)
-      return (vertAMatches | vertBMatches | vertCMatches)
-    })
-
-    if(node.angle) {
+    node.phi = phi
+    if(phi && node.angle) {
+      let nodeTriangles = [...node.redTriangles, ...node.blueTriangles]
       // Perform deformation on all matching nodes
       nodeTriangles.forEach(triangle => {
         if(vertMatches(triangle.original.vertA, node.nodeOrigin)) {
@@ -370,7 +364,6 @@ let sketch = function(p) {
           triangle.vertC = triangle.original.vertC.add(math.Complex.fromPolar(phi, node.angle))
         }
       })
-      node.phi = phi
     }
   }
   
@@ -413,9 +406,9 @@ let sketch = function(p) {
         */
 
       switch(node.type) {
-        case 4: phi = scale(nodeBrightness, 0, 255, -2/3, 1)
+        case 4: phi = p.map(nodeBrightness, 0, 255, -2/3, 1)
           break
-        case 5: phi = scale(nodeBrightness, 0, 255, -2/3, 1)
+        case 5: phi = p.map(nodeBrightness, 0, 255, -2/3, 1)
           break
       }
       phi *= short
@@ -449,9 +442,16 @@ let sketch = function(p) {
     } else {
       deformButton.removeAttribute("disabled")
     }
+    const t0 = performance.now();
     initPenrose(subdivisions)
+    const t1 = performance.now();
     recalcButton.attribute("disabled", "")
     p.draw()
+    const t2 = performance.now();
+    if(debug.checked()) {
+      console.log(`Init took ${t1 - t0} milliseconds.`);
+      console.log(`Draw took ${t2 - t1} milliseconds.`);
+    }
   }
 
   function setPalette() {
@@ -500,7 +500,7 @@ let sketch = function(p) {
     recalc(img)
 
     if(exportCheck.checked())
-      p.saveCanvas(canvas, `${zeroPad(frame)}`, 'png')
+      p.saveCanvas(canvas, zeroPad(frame), 'png')
 
     if(running)
       animate()
@@ -578,7 +578,7 @@ let sketch = function(p) {
 
     let detailLabel = p.createSpan("Level of detail")
     detailLabel.position(canvasSize + 20, y+=80)
-    subdivControl = p.createSlider(1, 8, subdivisions)
+    subdivControl = p.createSlider(3, 8, subdivisions)
     subdivControl.position(canvasSize + 20, y+=30)
     subdivControl.changed(enableButton)
 
@@ -636,12 +636,12 @@ let sketch = function(p) {
   p.draw = function() {
 
     if(manualControl.checked()) {
-      p1 = scale(phi1slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p2 = scale(phi2slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p4 = scale(phi4slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p5 = scale(phi5slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p6 = scale(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p7 = scale(phi7slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p1 = p.map(phi1slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p2 = p.map(phi2slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p4 = p.map(phi4slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p5 = p.map(phi5slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p6 = p.map(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p7 = p.map(phi7slider.value(), 0, SLIDER_RESOLUTION, -short, short)
   
       manualDeform(p1, p2, p4, p5, p6, p7)
     } else {
