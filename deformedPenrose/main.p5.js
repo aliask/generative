@@ -1,7 +1,10 @@
 let sketch = function(p) {
-  let goldenRatio = (1 + Math.sqrt(5)) / 2
-  let NUM_SUBDIVISIONS = 7
+  const goldenRatio = (1 + Math.sqrt(5)) / 2
+  const SLIDER_RESOLUTION = 30
+  const SUBDIVISION_THRESHOLD = 7
+  let subdivisions = 7
   let canvasSize
+  let canvas
   let triangles = []
   let nodes = []
   let inputImage
@@ -12,6 +15,7 @@ let sketch = function(p) {
   let shadeA, shadeB, shadeC, subdivControl
   let drawLines, debug, manualControl, recalcButton, deformButton
   let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
+  let p1, p2, p4, p5, p6, p7
   let palettes = [
     { "name": "Outrun", "palette": { "a": "#D90368", "b": "#2E294E", "lines": "#2E294E" } },
     { "name": "Autumn", "palette": { "a": "#780116", "b": "#DB7C26", "lines": "#780116" } },
@@ -22,6 +26,10 @@ let sketch = function(p) {
     { "name": "Grey",   "palette": { "a": "#141414", "b": "#2d2d2d", "lines": "#0a0a0a" } }
   ]
   let palette = palettes[0].palette
+
+  function scale(num, in_min, in_max, out_min, out_max) {
+    return (num - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
+  }
 
   // Find the matching node in an array of nodes
   function findNode(nodes, node, searchKey) {
@@ -351,84 +359,88 @@ let sketch = function(p) {
 
   }
 
-  function deformTriangles(p1, p2, p4, p5, p6, p7) {
+  function deformNode(node, phi) {
+    // Find all the triangles which have this node
+    let nodeTriangles = triangles.filter(triangle => {
+      let vertAMatches = vertMatches(triangle.original.vertA, node.nodeOrigin)
+      let vertBMatches = vertMatches(triangle.original.vertB, node.nodeOrigin)
+      let vertCMatches = vertMatches(triangle.original.vertC, node.nodeOrigin)
+      return (vertAMatches | vertBMatches | vertCMatches)
+    })
 
+    if(node.angle) {
+      // Perform deformation on all matching nodes
+      nodeTriangles.forEach(triangle => {
+        if(vertMatches(triangle.original.vertA, node.nodeOrigin)) {
+          triangle.vertA = triangle.original.vertA.add(math.Complex.fromPolar(phi, node.angle))
+        } else if(vertMatches(triangle.original.vertB, node.nodeOrigin)) {
+          triangle.vertB = triangle.original.vertB.add(math.Complex.fromPolar(phi, node.angle))
+        } else if(vertMatches(triangle.original.vertC, node.nodeOrigin)) {
+          triangle.vertC = triangle.original.vertC.add(math.Complex.fromPolar(phi, node.angle))
+        }
+      })
+      node.phi = phi
+    }
+  }
+  
+  function manualDeform(p1, p2, p4, p5, p6, p7) {
+    nodes.forEach(node => {
+      if(node.type == 1)
+        phi = p1
+      else if(node.type == 2)
+        phi = p2
+      else if(node.type == 4)
+        phi = p4
+      else if(node.type == 5)
+        phi = p5
+      else if(node.type == 6)
+        phi = p6
+      else if(node.type == 7)
+        phi = p7
+
+      deformNode(node, phi)
+    })
+  }
+
+  function deformTriangles(inputImage) {
     nodes.forEach(node => {
 
       // How much do we shift this node type?
       let phi = 0
+      let x = p.int(canvasSize*(node.nodeOrigin.re + 1)/2)
+      let y = p.int(canvasSize*(node.nodeOrigin.im + 1)/2)
+      let nodeBrightness = getPixelVal(inputImage, x, y)
 
-      if(manualControl.checked()) {
-        if(node.type == 1)
-          phi = p1
-        else if(node.type == 2)
-          phi = p2
-        else if(node.type == 4)
-          phi = p4
-        else if(node.type == 5)
-          phi = p5
-        else if(node.type == 6)
-          phi = p6
-        else if(node.type == 7)
-          phi = p7
-      } else {
-        let x = p.int(canvasSize*(node.nodeOrigin.re + 1)/2)
-        let y = p.int(canvasSize*(node.nodeOrigin.im + 1)/2)
+      /* This is where the actual greyscale to deformation mapping happens
+        * Each node type can be deformed within a range, but a pre-determined
+        * full-black/full-white preset is used to set the range.
+        * These presets are scaled by the "short" length of the penrose tile which
+        * was calculated during the node type sorting, to allow for different size tiles.
+        * Full-white => t4/t5 = 1, others unchanged
+        * Full-black => t4/t5 = -2/3, others unchanged
+        */
 
-
-        /* This is where the actual greyscale to deformation mapping happens
-         * Each node type can be deformed within a range, but I have pre-determined
-         * a fully black, and fully white presets, which we use to set the range.
-         * These presets are scaled by the "short" length of the penrose tile which
-         * was calculated during the node type sorting.
-         * Fullly white => t4,5,6 = short
-         * Full black => t1 = -short, t2,4 = -short/3 
-         */
-
-        switch(node.type) {
-          case 1:
-            phi = p.map(getPixelVal(x, y), 0, 255, 0, 1)
-            break
-          case 2:
-            phi = p.map(getPixelVal(x, y), 0, 255, -1/3, 0)
-            break
-          case 4:
-            phi = p.map(getPixelVal(x, y), 0, 255, -1/3, 1)
-            break
-          case 5:
-            phi = p.map(getPixelVal(x, y), 0, 255, 0, 1)
-            break
-        }
-        phi *= short
-
+      switch(node.type) {
+        case 4: phi = scale(nodeBrightness, 0, 255, -2/3, 1)
+          break
+        case 5: phi = scale(nodeBrightness, 0, 255, -2/3, 1)
+          break
       }
+      phi *= short
 
-      // Find all the triangles which have this node
-      let nodeTriangles = triangles.filter(triangle => {
-        let vertAMatches = vertMatches(triangle.original.vertA, node.nodeOrigin)
-        let vertBMatches = vertMatches(triangle.original.vertB, node.nodeOrigin)
-        let vertCMatches = vertMatches(triangle.original.vertC, node.nodeOrigin)
-        return (vertAMatches | vertBMatches | vertCMatches)
-      })
+      deformNode(node, phi)
 
-      if(node.angle) {
-        // Perform deformation on all matching nodes
-        nodeTriangles.forEach(triangle => {
-          if(vertMatches(triangle.original.vertA, node.nodeOrigin)) {
-            triangle.vertA = triangle.original.vertA.add(math.Complex.fromPolar(phi, node.angle))
-          } else if(vertMatches(triangle.original.vertB, node.nodeOrigin)) {
-            triangle.vertB = triangle.original.vertB.add(math.Complex.fromPolar(phi, node.angle))
-          } else if(vertMatches(triangle.original.vertC, node.nodeOrigin)) {
-            triangle.vertC = triangle.original.vertC.add(math.Complex.fromPolar(phi, node.angle))
-          }
-        })
-      }
     })
 
   }
 
-  function getPixelVal(x, y) {
-    return inputImage.pixels[4 * (y * inputImage.width + x)]
+  function getPixelVal(image, x, y) {
+    return image.pixels[4 * (y * image.width + x)]
+  }
+
+  function drawIfFast() {
+    if(subdivisions <= SUBDIVISION_THRESHOLD)
+      p.draw()
   }
 
   // Function to recalculate the level of detail
@@ -439,7 +451,13 @@ let sketch = function(p) {
 
     inputImage.filter(p.GRAY)
     inputImage.loadPixels()
-    initPenrose(p.int(subdivControl.value()))
+    subdivisions = p.int(subdivControl.value())
+    if(subdivisions <= SUBDIVISION_THRESHOLD) {
+      deformButton.attribute("disabled", "")
+    } else {
+      deformButton.removeAttribute("disabled")
+    }
+    initPenrose(subdivisions)
     recalcButton.attribute("disabled", "")
     p.draw()
   }
@@ -448,7 +466,7 @@ let sketch = function(p) {
     palette = { "a": shadeA.color() , "b": shadeB.color(), "lines": shadeC.color() }
     p.draw()
   }
-
+  
   function pickPalette(e) {
     palette = palettes.filter(a=>{return a.name==e.target.value})[0];
     if(!palette) { return }
@@ -487,26 +505,31 @@ let sketch = function(p) {
     else
       canvasSize = inputImage.height
 
-    let canvas = p.createCanvas(canvasSize, canvasSize)
-    canvas.style('border-radius', 50 + 'px')
+    canvas = p.createCanvas(canvasSize, canvasSize)
 
     let y = 20
     manualControl = p.createCheckbox("Manual Control", false)
     manualControl.changed(p.draw)
     manualControl.position(canvasSize + 20, y)
 
-    phi1slider = p.createSlider(0, 20, 10)
+    phi1slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
+    phi2slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
+    phi4slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
+    phi5slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
+    phi6slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
+    phi7slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
     phi1slider.position(canvasSize + 20, y+=30)
-    phi2slider = p.createSlider(0, 20, 10)
     phi2slider.position(canvasSize + 20, y+=30)
-    phi4slider = p.createSlider(0, 20, 10)
     phi4slider.position(canvasSize + 20, y+=30)
-    phi5slider = p.createSlider(0, 20, 10)
     phi5slider.position(canvasSize + 20, y+=30)
-    phi6slider = p.createSlider(0, 20, 10)
     phi6slider.position(canvasSize + 20, y+=30)
-    phi7slider = p.createSlider(0, 20, 10)
     phi7slider.position(canvasSize + 20, y+=30)
+    phi1slider.changed(drawIfFast)
+    phi2slider.changed(drawIfFast)
+    phi4slider.changed(drawIfFast)
+    phi5slider.changed(drawIfFast)
+    phi6slider.changed(drawIfFast)
+    phi7slider.changed(drawIfFast)
 
     deformButton = p.createButton("Deform")
     deformButton.position(canvasSize + 20, y+=30)
@@ -518,7 +541,7 @@ let sketch = function(p) {
 
     let detailLabel = p.createSpan("Level of detail")
     detailLabel.position(canvasSize + 20, y+=80)
-    subdivControl = p.createSlider(1, 8, NUM_SUBDIVISIONS)
+    subdivControl = p.createSlider(1, 8, subdivisions)
     subdivControl.position(canvasSize + 20, y+=30)
     subdivControl.changed(enableButton)
 
@@ -558,9 +581,16 @@ let sketch = function(p) {
     shadeC = p.createColorPicker(palette.lines)
     shadeC.input(setPalette)
 
+    subdivisions = p.int(subdivControl.value())
+    if(subdivisions <= SUBDIVISION_THRESHOLD) {
+      deformButton.attribute("disabled", "")
+    } else {
+      deformButton.removeAttribute("disabled")
+    }
+
     inputImage.filter(p.GRAY)
     inputImage.loadPixels()
-    initPenrose(NUM_SUBDIVISIONS)
+    initPenrose(subdivisions)
 
     p.noLoop()
 
@@ -568,14 +598,18 @@ let sketch = function(p) {
 
   p.draw = function() {
 
-    let p1 = p.map(phi1slider.value(), 0, 20, -0.05, 0.05)
-    let p2 = p.map(phi2slider.value(), 0, 20, -0.05, 0.05)
-    let p4 = p.map(phi4slider.value(), 0, 20, -0.05, 0.05)
-    let p5 = p.map(phi5slider.value(), 0, 20, -0.05, 0.05)
-    let p6 = p.map(phi6slider.value(), 0, 20, -0.05, 0.05)
-    let p7 = p.map(phi7slider.value(), 0, 20, -0.05, 0.05)
-
-    deformTriangles(p1, p2, p4, p5, p6, p7)
+    if(manualControl.checked()) {
+      p1 = scale(phi1slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p2 = scale(phi2slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p4 = scale(phi4slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p5 = scale(phi5slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p6 = scale(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p7 = scale(phi7slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+  
+      manualDeform(p1, p2, p4, p5, p6, p7)
+    } else {
+      deformTriangles(inputImage)
+    }
 
     p.background(palette.lines)
     p.strokeWeight(drawLines.checked() ? 1 : 0)
@@ -598,37 +632,48 @@ let sketch = function(p) {
     p.fill("#000")
 
     if(manualControl.checked()) {
-      let y = 30
-      p.text("phi1: " + p1.toFixed(2), canvasSize - 60, y+=35)
-      p.text("phi2: " + p2.toFixed(2), canvasSize - 60, y+=30)
-      p.text("phi4: " + p4.toFixed(2), canvasSize - 60, y+=30)
-      p.text("phi5: " + p5.toFixed(2), canvasSize - 60, y+=30)
-      p.text("phi6: " + p6.toFixed(2), canvasSize - 60, y+=30)
-      p.text("phi7: " + p7.toFixed(2), canvasSize - 60, y+=30)
+      let y = 35
+      p.text("t1:" + p1.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t2:" + p2.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t4:" + p4.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t5:" + p5.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t6:" + p6.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t7:" + p7.toFixed(2), canvasSize - 40, y+=30)
     }
 
     if(debug.checked()) {
       p.text("Nodes: " + nodes.length, 0, 15)
       p.text("Triangles: " + triangles.length, 0, 30)
+      canvas.style('clip-path', '')
 
       nodes.forEach(node => {
 
-        let nodeText = ""
-        if(node.type)
-          nodeText = "t" + node.type
         if(node.angle) {
+          // Green line showing deformation
           p.stroke("#0f0")
           p.beginShape()
-          let newVert = node.nodeOrigin.add(math.Complex.fromPolar(0.05,node.angle))
+          let newVert = node.nodeOrigin.add(math.Complex.fromPolar(node.phi, node.angle))
           p.vertex(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
           p.vertex(canvasSize*(newVert.re + 1)/2, canvasSize*(newVert.im + 1)/2)
           p.endShape()
+
+          // Red dot at origin
+          p.stroke("#f00")
+          p.strokeWeight(5)
+          p.point(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
+          p.strokeWeight(1)
         }
-        p.stroke(shadeC.color())
-        p.fill("#000")
-        p.text(nodeText, (node.nodeOrigin.re+1)*canvasSize/2, (node.nodeOrigin.im+1)*canvasSize/2)
+        
+        // Label nodes which can be deformed
+        if(node.type && node.type != 3) {
+          p.stroke(shadeC.color())
+          p.fill("#000")
+          p.text(`t${node.type}`, (node.nodeOrigin.re+1)*canvasSize/2, (node.nodeOrigin.im+1)*canvasSize/2)
+        }
 
       })
+    } else {
+      canvas.style('clip-path', 'circle(45% at center)')
     }
 
   }
