@@ -1,4 +1,18 @@
 let sketch = function(p) {
+
+  class Node {
+    nodeOrigin
+    destinations
+    type
+    angle
+  
+    constructor(origin, destination) {
+      this.nodeOrigin = origin
+      this.destinations = new Map()
+      this.destinations.set(getId(destination), destination)
+    }
+  }
+
   const goldenRatio = (1 + Math.sqrt(5)) / 2
   const SLIDER_RESOLUTION = 30
   const SUBDIVISION_THRESHOLD = 7
@@ -7,6 +21,7 @@ let sketch = function(p) {
   let canvas
   let triangles = []
   let nodes = []
+  let nodeMap = new Map()
   let inputImage
   let short = 0
   let long = 0
@@ -31,46 +46,19 @@ let sketch = function(p) {
     return (num - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
   }
 
-  // Find the matching node in an array of nodes
-  function findNode(nodes, node, searchKey) {
-
-    let retVal = []
-
-    if(searchKey) {
-      retVal = nodes.filter(matchedNode => {
-        return (matchedNode[searchKey].im == node.im && matchedNode[searchKey].re == node.re)
-      })
-    } else {
-      retVal = nodes.filter(matchedNode => {
-        return (matchedNode.im == node.im && matchedNode.re == node.re)
-      })
-    }
-    return retVal
+  function getId(point) {
+    return `${point.re}${point.im}`
   }
 
   // Build the nodes array. Each node will have an origin point, plus a list of the destinations
   // Later, we will also calculate the node type, and which direction we should deform it in
   function incrementNode(nodeOrigin, nodeDest) {
 
-    let matchingNodes = findNode(nodes, nodeOrigin, "nodeOrigin")
-    if(matchingNodes.length == 0) {
-      // If node isn't already in nodes[] then we add it
-      nodes.push({ nodeOrigin: nodeOrigin, destinations: [ nodeDest ]})
-    } else {
-
-      // If it's already in nodes[] then we add this destination
-      matchingNodes.forEach(node => {
-
-        // But only if it's not already in the destination list
-        let matchedDestinations = findNode(node.destinations, nodeDest)
-        if(matchedDestinations.length == 0) {
-          node.destinations.push(nodeDest)
-        }
-
-      })
-
-    }
-
+    node = nodeMap.get(getId(nodeOrigin))
+    if(!node)
+      nodeMap.set(getId(nodeOrigin), new Node(nodeOrigin, nodeDest))
+    else
+      node.destinations.set(getId(nodeDest), nodeDest)
   }
 
   // For a given triangle, we add each edge vertex to the node list (A->B gets added, but so does B->A, etc)
@@ -170,6 +158,7 @@ let sketch = function(p) {
 
     triangles = []
     nodes = []
+    nodeMap = new Map()
     short = 0
     long = 0
 
@@ -205,7 +194,7 @@ let sketch = function(p) {
     })
 
     // Determine which node type each node is
-    nodes.forEach(node => {
+    nodeMap.forEach(node => {
 
       let nodeTriangles = triangles.filter(triangle => {
         let vertAMatches = vertMatches(triangle.vertA, node.nodeOrigin)
@@ -286,11 +275,12 @@ let sketch = function(p) {
           // then a big one (1.89). The destination corresponding to the first big one after a small one is the angleNode.
 
           // Sort destinations by angle
-          node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
+          //node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
+          sortedDests = [...node.destinations.values()].sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
 
           nextBigOne = false
-          lastAngle = node.destinations[5].sub(node.nodeOrigin).arg() - 2*Math.PI
-          for(let dest of node.destinations) {
+          lastAngle = sortedDests[5].sub(node.nodeOrigin).arg() - 2*Math.PI
+          for(let dest of sortedDests) {
             let angle = dest.sub(node.nodeOrigin).arg()
             let delta = angle - lastAngle
 
@@ -305,7 +295,7 @@ let sketch = function(p) {
           }
           // If we get to the end without a small->large transition, it must have been the first dest node
           if(typeof node.angle === "undefined")
-            node.angle = node.destinations[0].sub(node.nodeOrigin).arg()
+            node.angle = sortedDests[0].sub(node.nodeOrigin).arg()
 
           break
         case 6:
@@ -314,12 +304,13 @@ let sketch = function(p) {
           // angleNode will be the node at the end of the sequence, short short long short short short long SHORT <- this one
 
           // Sort destinations by angle
-          node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
+          //node.destinations.sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
+          sortedDests = [...node.destinations.values()].sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
 
           distHist = []
           i = 0
           while(typeof node.angle === "undefined") {
-            let dest = node.destinations[i++]
+            let dest = sortedDests[i++]
             let dist = approx(dest.sub(node.nodeOrigin).abs(), 3) // round value to account for calculation errors
             distHist.push(dist)
 
@@ -340,12 +331,12 @@ let sketch = function(p) {
             }
 
             // We must have hit the end, loop around and try again
-            if(i == node.destinations.length)
+            if(i == node.destinations.size)
               i = 0
           }
           // If we get to the end without a small->large transition, it must have been the first dest node
           if(typeof node.angle === "undefined")
-            node.angle = node.destinations[0].sub(node.nodeOrigin).arg()
+            node.angle = sortedDests[0].sub(node.nodeOrigin).arg()
 
           break
         case 3:
@@ -384,7 +375,8 @@ let sketch = function(p) {
   }
   
   function manualDeform(p1, p2, p4, p5, p6, p7) {
-    nodes.forEach(node => {
+    nodeMap.forEach(node => {
+      let phi = 0
       if(node.type == 1)
         phi = p1
       else if(node.type == 2)
@@ -403,7 +395,7 @@ let sketch = function(p) {
   }
 
   function deformTriangles(inputImage) {
-    nodes.forEach(node => {
+    nodeMap.forEach(node => {
 
       // How much do we shift this node type?
       let phi = 0
@@ -687,10 +679,12 @@ let sketch = function(p) {
     }
 
     if(debug.checked()) {
-      p.text("Nodes: " + nodes.length, 0, 15)
+      p.text("Nodes: " + nodeMap.size, 0, 15)
       p.text("Triangles: " + triangles.length, 0, 30)
+      p.text("Short: " + short, 0, 45)
+      p.text("Long: " + long, 0, 60)
 
-      nodes.forEach(node => {
+      nodeMap.forEach(node => {
 
         if(node.angle) {
           // Green line showing deformation
