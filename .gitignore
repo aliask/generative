@@ -2,7 +2,7 @@ ffmpeg
 
 # Temporary output files
 output/*
-deformedPenrose/breathe/*.png
+deformedPenrose/output/*.png
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
