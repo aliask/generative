@@ -13,7 +13,7 @@ let sketch = function(p) {
 
   // Controls
   let shadeA, shadeB, shadeC, subdivControl
-  let drawLines, debug, manualControl, recalcButton, deformButton
+  let drawLines, debug, manualControl, recalcButton, deformButton, animateButton, exportCheck
   let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
   let p1, p2, p4, p5, p6, p7
   let palettes = [
@@ -494,6 +494,43 @@ let sketch = function(p) {
     p.loadImage(e.target.value, recalc)
   }
 
+  // Pads a number with 0s and returns the string, 25 => 0025
+  function zeroPad(number) {
+    if (number<=9999) { number = ("000"+number).slice(-4); }
+    return number;
+  }
+
+  let frame = 0
+  let running = false
+
+  // Display the loaded image, and optionally export it (download)
+  function showFrame(img) {
+    recalc(img)
+
+    if(exportCheck.checked())
+      p.saveCanvas(canvas, `${zeroPad(frame)}`, 'png')
+
+    if(running)
+      animate()
+  }
+
+  // Load the next frame
+  function animate() {
+    p.loadImage(`breathe/${zeroPad(frame)}.png`, showFrame)
+    frame = (frame + 1) % 200
+  }
+
+  function animateOrStop() {
+    if(running) {
+      animateButton.html("Animate")
+      running = false
+    } else {
+      running = true
+      animateButton.html("Stop")
+      animate(0)
+    }
+  }
+
   p.preload = function() {
     inputImage = p.loadImage("dgen.png")
   }
@@ -538,6 +575,14 @@ let sketch = function(p) {
     debug = p.createCheckbox("Debug", false)
     debug.changed(p.draw)
     debug.position(canvasSize + 120, y)
+
+    animateButton = p.createButton("Animate")
+    animateButton.position(canvasSize + 20, y+=30)
+    animateButton.mousePressed(animateOrStop)
+
+    exportCheck = p.createCheckbox("Export", false)
+    exportCheck.changed(p.draw)
+    exportCheck.position(canvasSize + 120, y)
 
     let detailLabel = p.createSpan("Level of detail")
     detailLabel.position(canvasSize + 20, y+=80)
@@ -644,7 +689,6 @@ let sketch = function(p) {
     if(debug.checked()) {
       p.text("Nodes: " + nodes.length, 0, 15)
       p.text("Triangles: " + triangles.length, 0, 30)
-      canvas.style('clip-path', '')
 
       nodes.forEach(node => {
 
@@ -673,7 +717,13 @@ let sketch = function(p) {
 
       })
     } else {
-      canvas.style('clip-path', 'circle(45% at center)')
+      // Circle crop
+      canvas.drawingContext.globalCompositeOperation = 'destination-in'
+      canvas.drawingContext.beginPath()
+      canvas.drawingContext.arc(canvas.width/2, canvas.height/2, 0.45*canvas.height, 0, Math.PI*2)
+      canvas.drawingContext.closePath()
+      canvas.drawingContext.fill()
+      canvas.drawingContext.globalCompositeOperation = 'source-over'
     }
 
   }
