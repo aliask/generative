@@ -28,20 +28,22 @@ let sketch = function(p) {
   let long = 0
 
   // Controls
-  let shadeA, shadeB, shadeC, subdivControl
+  let shadeA, shadeB, shadeC, shadeAlabel, shadeBlabel, shadeClabel, subdivControl, shadeOffset, colourSelect
   let drawLines, debug, manualControl, recalcButton, deformButton, animateButton, exportCheck
+  let doExport = true
   let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
   let p1, p2, p4, p5, p6, p7
   let palettes = [
     { "name": "Outrun", "palette": { "a": "#D90368", "b": "#2E294E", "lines": "#2E294E" } },
     { "name": "Autumn", "palette": { "a": "#780116", "b": "#DB7C26", "lines": "#780116" } },
-    { "name": "Purple", "palette": { "a": "#683257", "b": "#bd4089", "lines": "#683257" } },
-    { "name": "Earthy", "palette": { "a": "#c57b57", "b": "#f1ab86", "lines": "#c57b57" } },
+    { "name": "Purple", "palette": { "a": "#552846", "b": "#bd4089", "lines": "#552846" } },
+    { "name": "Earthy", "palette": { "a": "#bf6d46", "b": "#f1ab86", "lines": "#bf6d46" } },
     { "name": "Sky",    "palette": { "a": "#445398", "b": "#92aae3", "lines": "#445398" } },
     { "name": "Green",  "palette": { "a": "#4e5c15", "b": "#AEC772", "lines": "#4e5c15" } },
-    { "name": "Grey",   "palette": { "a": "#141414", "b": "#2d2d2d", "lines": "#0a0a0a" } }
+    { "name": "Grey",   "palette": { "a": "#141414", "b": "#444444", "lines": "#0a0a0a" } },
+    { "name": "Officer",   "palette": { "a": "#EC994B", "b": "#15133C", "lines": "#15133C" } },
   ]
-  let palette = palettes[0].palette
+  let palette = palettes[0]
 
   // Create an ID based on the coordinates of the point - same coordinates will give consistent ID
   // Used to prevent duplicate points in node Map and destination Set
@@ -387,14 +389,57 @@ let sketch = function(p) {
     })
   }
 
+  let t = 0
+
+  // helper for writing color to array
+  function writePixelValue(image, x, y, c) {
+    let index = (x + y * image.width) * 4
+    image.pixels[index] = c
+    image.pixels[index + 1] = c
+    image.pixels[index + 2] = c
+    image.pixels[index + 3] = 255
+  }
+
   function deformTriangles(inputImage) {
+
+    // Calculate noise field
+    let noiseField = p.createImage(canvasSize/10, canvasSize/10)
+    noiseField.loadPixels()
+    let SPEED = 10
+    let CLOUD_SIZE = 30
+    for (let x = 0; x < noiseField.width; x++) {
+      for (let y = 0; y < noiseField.height; y++) {
+        let c = 192 * p.noise(x/CLOUD_SIZE + t/SPEED, y/CLOUD_SIZE - t/SPEED) + 64
+        let alpha = 0.0
+        if(t < 1000) {
+          alpha = Math.min(t/20, 1.0)
+        } else if(t < 1020) {
+          alpha = 1.0 - (t-1000)/20
+        } else {
+          alpha = 0.0
+          t = 0
+          doExport = false
+        }
+        writePixelValue(noiseField, x, y, p.int(c * alpha))
+      }
+    }
+    noiseField.updatePixels()
+    noiseField.resize(canvasSize, canvasSize)
+    t+=1
+
+    // Blend noise field with input image
+    let blendedImage = p.createImage(canvasSize, canvasSize)
+    blendedImage.copy(noiseField, 0, 0, canvasSize, canvasSize, 0, 0, canvasSize, canvasSize)
+    blendedImage.blend(inputImage, 0, 0, canvasSize, canvasSize, 0, 0, canvasSize, canvasSize, p.DARKEST)
+    blendedImage.loadPixels()
+
     nodeMap.forEach(node => {
 
       // How much do we shift this node type?
       let phi = 0
       let x = p.int(canvasSize*(node.nodeOrigin.re + 1)/2)
       let y = p.int(canvasSize*(node.nodeOrigin.im + 1)/2)
-      let nodeBrightness = getPixelVal(inputImage, x, y)
+      let nodeBrightness = getPixelVal(blendedImage, x, y)
 
       /* This is where the actual greyscale to deformation mapping happens
         * Each node type can be deformed within a range, but a pre-determined
@@ -430,7 +475,7 @@ let sketch = function(p) {
 
   // Function to recalculate the level of detail
   function recalc(img) {
-    if(img) {
+    if(img && img.width) {
       inputImage = img
     }
 
@@ -455,25 +500,24 @@ let sketch = function(p) {
   }
 
   function setPalette() {
-    palette = { "a": shadeA.color() , "b": shadeB.color(), "lines": shadeC.color() }
+    palette = { "name": "Custom", "palette": { "a": shadeA.color() , "b": shadeB.color(), "lines": shadeC.color() } }
     p.draw()
   }
   
   function pickPalette(e) {
-    palette = palettes.filter(a=>{return a.name==e.target.value})[0];
-    if(!palette) { return }
-    palette = palette.palette
+    let selectedPalette = palettes.filter(a=>{return a.name==e.target.value})[0];
+    if(!selectedPalette) { return }
+    palette = selectedPalette
 
     // colorpickers don't appear to have a method to set the value, so we have to recreate :(
     shadeA.remove()
-    shadeA = p.createColorPicker(palette.a)
-    shadeA.input(setPalette)
     shadeB.remove()
-    shadeB = p.createColorPicker(palette.b)
-    shadeB.input(setPalette)
     shadeC.remove()
-    shadeC = p.createColorPicker(palette.lines)
-    shadeC.input(setPalette)
+    shadeAlabel.remove()
+    shadeBlabel.remove()
+    shadeClabel.remove()
+    drawLines.remove()
+    setupColours(shadeOffset)
 
     p.draw()
   }
@@ -482,8 +526,13 @@ let sketch = function(p) {
     recalcButton.removeAttribute("disabled")
   }
 
-  function newImage(e) {
-    p.loadImage(e.target.value, recalc)
+  function imageLoaded(img) {
+    inputImage = img
+    recalc()
+  }
+
+  function imageChanged(e) {
+    p.loadImage(e.target.value, imageLoaded)
   }
 
   // Pads a number with 0s and returns the string, 25 => 0025
@@ -495,12 +544,18 @@ let sketch = function(p) {
   let frame = 0
   let running = false
 
+  // Export the current frame
+  function exportFrame() {
+    filename = `${palette.name}_lod${subdivisions}_${zeroPad(frame)}`
+    p.saveCanvas(canvas, filename, 'png')
+  }
+
   // Display the loaded image, and optionally export it (download)
   function showFrame(img) {
-    recalc(img)
+    imageLoaded(img)
 
     if(exportCheck.checked())
-      p.saveCanvas(canvas, zeroPad(frame), 'png')
+      exportFrame()
 
     if(running)
       animate()
@@ -523,8 +578,71 @@ let sketch = function(p) {
     }
   }
 
+  function randomise() {
+    // Randomise sliders
+    phi1slider.value(p.random(0, SLIDER_RESOLUTION))
+    phi2slider.value(p.random(0, SLIDER_RESOLUTION))
+    phi4slider.value(p.random(0, SLIDER_RESOLUTION))
+    phi5slider.value(p.random(0, SLIDER_RESOLUTION))
+    phi6slider.value(p.random(0, SLIDER_RESOLUTION))
+    phi7slider.value(p.random(0, SLIDER_RESOLUTION))
+    
+    // Randomise palette
+    let selectedPalette = palettes[Math.floor(Math.random()*palettes.length)]
+    palette = selectedPalette
+    colourSelect.value(selectedPalette.name)
+
+    // Randomise subdivisions
+    subdivControl.value(p.random(4, 8))
+    recalc()
+  }
+
+  function toggleManual() {
+    let enabled = manualControl.checked()
+    if(enabled) {
+      phi1slider.removeAttribute("disabled")
+      phi2slider.removeAttribute("disabled")
+      phi4slider.removeAttribute("disabled")
+      phi5slider.removeAttribute("disabled")
+      phi6slider.removeAttribute("disabled")
+      phi7slider.removeAttribute("disabled")
+    } else {
+      phi1slider.attribute("disabled", "")
+      phi2slider.attribute("disabled", "")
+      phi4slider.attribute("disabled", "")
+      phi5slider.attribute("disabled", "")
+      phi6slider.attribute("disabled", "")
+      phi7slider.attribute("disabled", "")
+    }
+    p.draw()
+  }
+
+  function setupColours(y) {
+    shadeOffset = y
+    shadeA = p.createColorPicker(palette.palette.a)
+    shadeA.input(setPalette)
+    shadeA.position(canvasSize + 20, y+=30)
+    shadeAlabel = p.createSpan("Fill")
+    shadeAlabel.position(canvasSize + 100, y+5)
+    shadeB = p.createColorPicker(palette.palette.b)
+    shadeB.input(setPalette)
+    shadeB.position(canvasSize + 20, y+=30)
+    shadeBlabel = p.createSpan("Background")
+    shadeBlabel.position(canvasSize + 100, y+5)
+    shadeC = p.createColorPicker(palette.palette.lines)
+    shadeC.input(setPalette)
+    shadeC.position(canvasSize + 20, y+=30)
+    shadeClabel = p.createSpan("Lines")
+    shadeClabel.position(canvasSize + 100, y+5)
+
+    drawLines = p.createCheckbox("Draw lines", true)
+    drawLines.changed(p.draw)
+    drawLines.position(canvasSize + 100, y+=30)
+    return y
+  }
+
   p.preload = function() {
-    inputImage = p.loadImage("dgen.png")
+    inputImage = p.loadImage("ring.png")
   }
 
   p.setup = function() {
@@ -538,7 +656,7 @@ let sketch = function(p) {
 
     let y = 20
     manualControl = p.createCheckbox("Manual Control", false)
-    manualControl.changed(p.draw)
+    manualControl.changed(toggleManual)
     manualControl.position(canvasSize + 20, y)
 
     phi1slider = p.createSlider(0, SLIDER_RESOLUTION, SLIDER_RESOLUTION/2)
@@ -553,6 +671,12 @@ let sketch = function(p) {
     phi5slider.position(canvasSize + 20, y+=30)
     phi6slider.position(canvasSize + 20, y+=30)
     phi7slider.position(canvasSize + 20, y+=30)
+    phi1slider.attribute("disabled", "")
+    phi2slider.attribute("disabled", "")
+    phi4slider.attribute("disabled", "")
+    phi5slider.attribute("disabled", "")
+    phi6slider.attribute("disabled", "")
+    phi7slider.attribute("disabled", "")
     phi1slider.changed(drawIfFast)
     phi2slider.changed(drawIfFast)
     phi4slider.changed(drawIfFast)
@@ -566,15 +690,23 @@ let sketch = function(p) {
 
     debug = p.createCheckbox("Debug", false)
     debug.changed(p.draw)
-    debug.position(canvasSize + 120, y)
+    debug.position(canvasSize + 110, y)
 
     animateButton = p.createButton("Animate")
     animateButton.position(canvasSize + 20, y+=30)
     animateButton.mousePressed(animateOrStop)
 
-    exportCheck = p.createCheckbox("Export", false)
+    exportCheck = p.createCheckbox("Export animation", false)
     exportCheck.changed(p.draw)
-    exportCheck.position(canvasSize + 120, y)
+    exportCheck.position(canvasSize + 110, y)
+
+    exportButton = p.createButton("Export")
+    exportButton.position(canvasSize + 20, y+=30)
+    exportButton.mousePressed(exportFrame)
+
+    randomiseButton = p.createButton("Randomise")
+    randomiseButton.position(canvasSize + 110, y)
+    randomiseButton.mousePressed(randomise)
 
     let detailLabel = p.createSpan("Level of detail")
     detailLabel.position(canvasSize + 20, y+=80)
@@ -591,32 +723,24 @@ let sketch = function(p) {
     imageLabel.position(canvasSize + 20, y+=50)
     let sel = p.createSelect()
     sel.position(canvasSize + 20, y+=20)
+    sel.option("ring.png")
     sel.option("dgen.png")
     sel.option("lineargrad.png")
     sel.option("skull.png")
     sel.option("snake.png")
     sel.option("bucwah.png")
-    sel.changed(newImage)
-
-    drawLines = p.createCheckbox("Draw lines", true)
-    drawLines.changed(p.draw)
-    drawLines.position(canvasSize + 120, canvasSize - 40)
+    sel.changed(imageChanged)
 
     let colourLabel = p.createSpan("Color Preset")
     colourLabel.position(canvasSize + 20, y+=50)
-    let colourSelect = p.createSelect()
+    colourSelect = p.createSelect()
     colourSelect.position(canvasSize + 20, y+=20)
     palettes.forEach(palette => {
       colourSelect.option(palette.name)
     })
     colourSelect.changed(pickPalette)
 
-    shadeA = p.createColorPicker(palette.a)
-    shadeA.input(setPalette)
-    shadeB = p.createColorPicker(palette.b)
-    shadeB.input(setPalette)
-    shadeC = p.createColorPicker(palette.lines)
-    shadeC.input(setPalette)
+    y = setupColours(y)
 
     subdivisions = p.int(subdivControl.value())
     if(subdivisions <= SUBDIVISION_THRESHOLD) {
@@ -629,7 +753,7 @@ let sketch = function(p) {
     inputImage.loadPixels()
     initPenrose(subdivisions)
 
-    p.noLoop()
+    p.frameRate(15)
 
   }
 
@@ -637,25 +761,25 @@ let sketch = function(p) {
 
     if(manualControl.checked()) {
       p1 = p.map(phi1slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p2 = p.map(phi2slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p4 = p.map(phi4slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p5 = p.map(phi5slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p6 = p.map(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p7 = p.map(phi7slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p2 = p.map(phi2slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
+      p4 = p.map(phi4slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
+      p5 = p.map(phi5slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
+      p6 = p.map(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short*0.6)
+      p7 = p.map(phi7slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short*0.6)
   
       manualDeform(p1, p2, p4, p5, p6, p7)
     } else {
       deformTriangles(inputImage)
     }
 
-    p.background(palette.lines)
+    p.background(palette.palette.lines)
     p.strokeWeight(drawLines.checked() ? 1 : 0)
-    p.stroke(palette.lines)
+    p.stroke(palette.palette.lines)
     for (let triangle of triangles) {
       if(triangle.type == 0) {
-        p.fill(palette.a)
+        p.fill(palette.palette.a)
       } else {
-        p.fill(palette.b)
+        p.fill(palette.palette.b)
       }
       p.beginShape()
       p.vertex(canvasSize*(triangle.vertA.re + 1)/2, canvasSize*(triangle.vertA.im + 1)/2)
@@ -665,7 +789,7 @@ let sketch = function(p) {
       p.endShape()
     }
 
-    p.stroke(palette.lines)
+    p.stroke(palette.palette.lines)
     p.fill("#000")
 
     if(manualControl.checked()) {
@@ -718,6 +842,10 @@ let sketch = function(p) {
       canvas.drawingContext.closePath()
       canvas.drawingContext.fill()
       canvas.drawingContext.globalCompositeOperation = 'source-over'
+    }
+
+    if(doExport) {
+      p.saveCanvas(canvas, `penrose_${t.toString().padStart(4, "0")}`, "png")
     }
 
   }

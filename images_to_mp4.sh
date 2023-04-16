@@ -8,9 +8,9 @@ function usage {
 }
 
 if [ $# == 3 ]; then
-	./ffmpeg -r 20 -f image2 -s $1x$2 -i $3_%04d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p output.mp4
+	ffmpeg -r 15 -f image2 -s $1x$2 -i $3_%04d.png -vcodec libx264 -crf 25 -preset slow -vf scale=$1:$2 output.mp4
 elif [ $# == 4 ]; then
-	./ffmpeg -r 20 -f image2 -s $1x$2 -i $3_%04d.png -vcodec libx264 -crf 25  -pix_fmt yuv420p $4
+	ffmpeg -r 15 -f image2 -s $1x$2 -i $3_%04d.png -vcodec libx264 -crf 25 -preset slow -vf scale=$1:$2 $4
 else
 	usage
 fi
