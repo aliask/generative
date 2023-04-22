@@ -18,7 +18,7 @@ let sketch = function(p) {
   const SLIDER_RESOLUTION = 30
   const SUBDIVISION_THRESHOLD = 7
 
-  let subdivisions = 7
+  let subdivisions = 4
   let canvasSize
   let canvas
   let triangles = []
@@ -30,7 +30,7 @@ let sketch = function(p) {
   // Controls
   let shadeA, shadeB, shadeC, shadeAlabel, shadeBlabel, shadeClabel, subdivControl, shadeOffset, colourSelect
   let drawLines, debug, manualControl, recalcButton, deformButton, animateButton, exportCheck
-  let doExport = true
+  let doExport = false
   let phi1slider, phi2slider, phi4slider, phi5slider, phi6slider, phi7slider
   let p1, p2, p4, p5, p6, p7
   let palettes = [
@@ -43,7 +43,7 @@ let sketch = function(p) {
     { "name": "Grey",   "palette": { "a": "#141414", "b": "#444444", "lines": "#0a0a0a" } },
     { "name": "Officer",   "palette": { "a": "#EC994B", "b": "#15133C", "lines": "#15133C" } },
   ]
-  let palette = palettes[0]
+  let palette = palettes[3]
 
   // Create an ID based on the coordinates of the point - same coordinates will give consistent ID
   // Used to prevent duplicate points in node Map and destination Set
@@ -271,8 +271,8 @@ let sketch = function(p) {
 
           // For 5 we have to resort to measuring angles between nodeOrigin and the destination nodes
           // angleNode is the node shared between the two blue triangles with the greatest angle (ie. fat side)
-          // If we go around the destinations CW or CCW , measuring the angles, we will have a small angle (0.63),
-          // then a big one (1.89). The destination corresponding to the first big one after a small one is the angleNode.
+          // If we go around the destinations CW or CCW , measuring the angles, we will have a small angle (pi/5 ~= 0.63),
+          // then a big one (3pi/5 ~= 1.89). The destination corresponding to the first big one after a small one is the angleNode.
 
           // Sort destinations by angle
           sortedDests = [...node.destinations.values()].sort((a,b) => (a.sub(node.nodeOrigin).arg() > b.sub(node.nodeOrigin).arg() ? 1 : -1))
@@ -327,7 +327,7 @@ let sketch = function(p) {
             }
             
             // nodes at the edge of the image can't be computed
-            if(distHist.length == 16) {
+            if(distHist.length == 18) {
               node.angle = 0
               break
             }
@@ -354,7 +354,7 @@ let sketch = function(p) {
 
   function deformNode(node, phi) {
     node.phi = phi
-    if(phi && node.angle) {
+    if(node.angle) {
       let nodeTriangles = [...node.redTriangles, ...node.blueTriangles]
       // Perform deformation on all matching nodes
       nodeTriangles.forEach(triangle => {
@@ -585,7 +585,7 @@ let sketch = function(p) {
     phi4slider.value(p.random(0, SLIDER_RESOLUTION))
     phi5slider.value(p.random(0, SLIDER_RESOLUTION))
     phi6slider.value(p.random(0, SLIDER_RESOLUTION))
-    phi7slider.value(p.random(0, SLIDER_RESOLUTION))
+    // phi7slider.value(p.random(0, SLIDER_RESOLUTION))
     
     // Randomise palette
     let selectedPalette = palettes[Math.floor(Math.random()*palettes.length)]
@@ -593,8 +593,13 @@ let sketch = function(p) {
     colourSelect.value(selectedPalette.name)
 
     // Randomise subdivisions
-    subdivControl.value(p.random(4, 8))
+    subdivControl.value(p.random(3, 5))
     recalc()
+  }
+
+  function exportAnimation() {
+    t = 0
+    doExport = true
   }
 
   function toggleManual() {
@@ -642,7 +647,7 @@ let sketch = function(p) {
   }
 
   p.preload = function() {
-    inputImage = p.loadImage("ring.png")
+    inputImage = p.loadImage("empty.png")
   }
 
   p.setup = function() {
@@ -697,7 +702,7 @@ let sketch = function(p) {
     animateButton.mousePressed(animateOrStop)
 
     exportCheck = p.createCheckbox("Export animation", false)
-    exportCheck.changed(p.draw)
+    exportCheck.changed(exportAnimation)
     exportCheck.position(canvasSize + 110, y)
 
     exportButton = p.createButton("Export")
@@ -723,6 +728,7 @@ let sketch = function(p) {
     imageLabel.position(canvasSize + 20, y+=50)
     let sel = p.createSelect()
     sel.position(canvasSize + 20, y+=20)
+    sel.option("empty.png")
     sel.option("ring.png")
     sel.option("dgen.png")
     sel.option("lineargrad.png")
@@ -761,19 +767,36 @@ let sketch = function(p) {
 
     if(manualControl.checked()) {
       p1 = p.map(phi1slider.value(), 0, SLIDER_RESOLUTION, -short, short)
-      p2 = p.map(phi2slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
-      p4 = p.map(phi4slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
-      p5 = p.map(phi5slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short)
-      p6 = p.map(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short*0.6)
-      p7 = p.map(phi7slider.value(), 0, SLIDER_RESOLUTION, -short*0.6, short*0.6)
-  
+      p2 = p.map(phi2slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p4 = p.map(phi4slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p5 = p.map(phi5slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p6 = p.map(phi6slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+      p7 = p.map(phi7slider.value(), 0, SLIDER_RESOLUTION, -short, short)
+
+      // Clamp to avoid weirdness - this is a bit of a hack, but it gives a nice result
+      // In case of a conflict, give p4 and p5 priority (ie. adjust the others to fit)
+      p4 = Math.min(short*Math.sin(Math.PI/10)*2, p4)
+      p5 = Math.min(short*Math.sin(Math.PI/10)*2, p5)
+      p4 = Math.max(-short*Math.sin(Math.PI/10), p4) // This should be -short*2sin(pi/10), but scaling ALL the way creates a fully dark image, which looks crap
+      p6 = Math.min(short-p5, p6)
+
+      p1 = Math.max(-short-p7, p1)
+      p1 = Math.max((-0.9*short*Math.sin(Math.PI/10)*2-p4)/Math.sin(3*Math.PI/5), p1)
+      p1 = Math.max(-short + 3*Math.sin(Math.PI/10)*Math.abs(p6), p1)
+
+      p2 = Math.max(-short*Math.sin(Math.PI/10)*2-p4, p2)
+      p2 = Math.min((short-p4)/2, p2)
+
+      p7 = Math.min((short-p5)*0.5, p7)
+      p7 = Math.max((-short+p5)*0.5, p7)
+
       manualDeform(p1, p2, p4, p5, p6, p7)
     } else {
       deformTriangles(inputImage)
     }
 
     p.background(palette.palette.lines)
-    p.strokeWeight(drawLines.checked() ? 1 : 0)
+    p.strokeWeight(drawLines.checked() ? 2 : 0)
     p.stroke(palette.palette.lines)
     for (let triangle of triangles) {
       if(triangle.type == 0) {
@@ -794,12 +817,12 @@ let sketch = function(p) {
 
     if(manualControl.checked()) {
       let y = 35
-      p.text("t1:" + p1.toFixed(2), canvasSize - 40, y+=30)
-      p.text("t2:" + p2.toFixed(2), canvasSize - 40, y+=30)
-      p.text("t4:" + p4.toFixed(2), canvasSize - 40, y+=30)
-      p.text("t5:" + p5.toFixed(2), canvasSize - 40, y+=30)
-      p.text("t6:" + p6.toFixed(2), canvasSize - 40, y+=30)
-      p.text("t7:" + p7.toFixed(2), canvasSize - 40, y+=30)
+      p.text("t1 " + p1.toFixed(3), canvasSize - 50, y+=30)
+      p.text("t2 " + p2.toFixed(3), canvasSize - 50, y+=30)
+      p.text("t4 " + p4.toFixed(3), canvasSize - 50, y+=30)
+      p.text("t5 " + p5.toFixed(3), canvasSize - 50, y+=30)
+      p.text("t6 " + p6.toFixed(3), canvasSize - 50, y+=30)
+      p.text("t7 " + p7.toFixed(3), canvasSize - 50, y+=30)
     }
 
     if(debug.checked()) {
@@ -818,13 +841,13 @@ let sketch = function(p) {
           p.vertex(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
           p.vertex(canvasSize*(newVert.re + 1)/2, canvasSize*(newVert.im + 1)/2)
           p.endShape()
-
-          // Red dot at origin
-          p.stroke("#f00")
-          p.strokeWeight(5)
-          p.point(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
-          p.strokeWeight(1)
         }
+
+        // Red dot at origin
+        p.stroke("#f00")
+        p.strokeWeight(5)
+        p.point(canvasSize*(node.nodeOrigin.re + 1)/2, canvasSize*(node.nodeOrigin.im + 1)/2)
+        p.strokeWeight(1)
         
         // Label nodes which can be deformed
         if(node.type && node.type != 3) {
